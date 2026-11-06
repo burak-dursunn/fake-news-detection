@@ -154,10 +154,13 @@ def run_experiment(
 ) -> dict[str, float]:
     output_dir = output_root / config.experiment_name
     if output_dir.exists():
-        if not overwrite:
+        completed = (output_dir / "test_metrikleri.json").is_file()
+        if completed and not overwrite:
             raise FileExistsError(
                 f"Deney klasörü zaten var: {output_dir}. Yeniden yazmak için --overwrite kullanın."
             )
+        if not completed:
+            print("Tamamlanmamış önceki deney çıktısı temizlenerek eğitim yeniden başlatılıyor.")
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True)
     shutil.copy2(config_path, output_dir / "kullanilan_config.json")
