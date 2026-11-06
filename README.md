@@ -42,9 +42,10 @@ python -m src.run_experiment --config configs/01_DistilBERT_256Token.json --data
 
 - Yalnızca `WELFake_Dataset.csv` kullanılır.
 - `text` alanı boş olan kayıtlar çıkarılır; başlığı boş ama metni dolu kayıtlar korunur.
-- Aynı başlık ve metne sahip yinelenen kayıtlar tekilleştirilir.
+- Başlıkları farklı olsa da aynı metne sahip yinelenen kayıtlar tekilleştirilir.
 - Çelişen etiketli yinelenenler eğitimden çıkarılır ve raporlanır.
-- Bölme bir kez `seed=42` ile %70 eğitim, %15 doğrulama, %15 test olarak oluşturulur.
+- Bölme `seed=42` ile yaklaşık %70 eğitim, %15 doğrulama, %15 test olarak oluşturulur; ilk 300 karakteri aynı olan metinler birlikte tutulur.
+- Bölmeler arasında aynı metin veya aynı 300 karakterlik başlangıç varsa eğitim engellenir. Bu kontrol tüm yakın tekrarları yakalamayı garanti etmez.
 - Tüm modeller aynı veri bölmelerini kullanır.
 
 ## Deney çıktıları

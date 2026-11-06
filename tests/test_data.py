@@ -4,10 +4,25 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data import create_split_manifest, load_and_clean_welfake
+from src.data import audit_split, create_split_manifest, load_and_clean_welfake
 
 
 class WELFakeCleaningTests(unittest.TestCase):
+    def test_same_text_different_titles_is_deduplicated(self) -> None:
+        rows = pd.DataFrame({"title": ["A", "B"], "text": ["Same news", "SAME NEWS"], "label": [1, 1]})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "input.csv"
+            rows.to_csv(path, index=False)
+            clean, report = load_and_clean_welfake(path)
+        self.assertEqual(len(clean), 1)
+        self.assertEqual(report.duplicate_rows_removed, 1)
+
+    def test_audit_rejects_cross_split_identical_text(self) -> None:
+        data = pd.DataFrame({"article_id": ["a", "b", "c"], "text": ["same", "same", "other"]})
+        manifest = pd.DataFrame({"article_id": ["a", "b", "c"], "split": ["train", "test", "validation"]})
+        with self.assertRaisesRegex(ValueError, "sızıntısı"):
+            audit_split(data, manifest)
+
     def test_cleaning_removes_empty_invalid_and_duplicate_rows(self) -> None:
         rows = pd.DataFrame(
             {
@@ -30,8 +45,9 @@ class WELFakeCleaningTests(unittest.TestCase):
     def test_split_keeps_each_article_in_one_partition(self) -> None:
         frame = pd.DataFrame(
             {
-                "article_id": [f"id-{index}" for index in range(20)],
-                "label": [0, 1] * 10,
+                "article_id": [f"id-{index}" for index in range(40)],
+                "text": [f"unique article {index}" for index in range(40)],
+                "label": [0, 1] * 20,
             }
         )
         manifest = create_split_manifest(frame, seed=42)

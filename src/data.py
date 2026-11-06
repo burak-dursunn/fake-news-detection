@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Final
 
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedGroupKFold
 
 
 LABELS: Final[set[int]] = {0, 1}
@@ -80,16 +80,18 @@ def load_and_clean_welfake(input_path: Path) -> tuple[pd.DataFrame, CleaningRepo
         for title, text in zip(frame["title"], frame["text"], strict=True)
     ]
 
-    # Aynı başlık+metin için farklı etiket bulunuyorsa kayıtlar güvenilir
-    # değildir; tüm çelişkili kopyalar çıkarılır ve rapora yazılır.
-    label_counts = frame.groupby("article_id")["label"].nunique()
+    # Başlıklar farklı olsa bile aynı metin bir haber sayılır.
+    frame["text_key"] = frame["text"].str.casefold().map(
+        lambda value: hashlib.sha256(value.encode("utf-8")).hexdigest()
+    )
+    label_counts = frame.groupby("text_key")["label"].nunique()
     conflicting_ids = label_counts.index[label_counts.gt(1)]
-    conflicting_mask = frame["article_id"].isin(conflicting_ids)
+    conflicting_mask = frame["text_key"].isin(conflicting_ids)
     conflicting_count = int(conflicting_mask.sum())
     frame = frame.loc[~conflicting_mask].copy()
 
     before_deduplication = len(frame)
-    frame = frame.drop_duplicates(subset=["article_id"], keep="first").copy()
+    frame = frame.drop_duplicates(subset=["text_key"], keep="first").copy()
     duplicate_count = before_deduplication - len(frame)
     frame = frame[["source_row_id", "article_id", "title", "text", "label"]]
     frame = frame.reset_index(drop=True)
@@ -114,28 +116,35 @@ def create_split_manifest(
     seed: int = 42,
 ) -> pd.DataFrame:
     """Makale düzeyinde sabit %70/%15/%15 train/validation/test bölmesi üretir."""
-    train_ids, temporary_ids = train_test_split(
-        clean_data["article_id"],
-        test_size=0.30,
-        random_state=seed,
-        stratify=clean_data["label"],
-    )
-    temporary = clean_data.set_index("article_id").loc[temporary_ids]
-    validation_ids, test_ids = train_test_split(
-        temporary_ids,
-        test_size=0.50,
-        random_state=seed,
-        stratify=temporary["label"],
-    )
-    split = pd.concat(
-        [
-            pd.DataFrame({"article_id": train_ids, "split": "train"}),
-            pd.DataFrame({"article_id": validation_ids, "split": "validation"}),
-            pd.DataFrame({"article_id": test_ids, "split": "test"}),
-        ],
-        ignore_index=True,
-    )
+    groups = clean_data["text"].fillna("").astype(str).str.casefold().str.slice(0, 300)
+    # Yirmi grup-katmanlı bölmeden 14/3/3 yaklaşık %70/%15/%15 sağlar.
+    splitter = StratifiedGroupKFold(n_splits=20, shuffle=True, random_state=seed)
+    split = pd.DataFrame({"article_id": clean_data["article_id"].to_numpy(), "split": ""})
+    for fold, (_, indices) in enumerate(splitter.split(clean_data, clean_data["label"], groups)):
+        split.loc[indices, "split"] = "train" if fold < 14 else "validation" if fold < 17 else "test"
     return split.sort_values("article_id").reset_index(drop=True)
+
+
+def audit_split(clean_data: pd.DataFrame, manifest: pd.DataFrame) -> dict:
+    """Küme üyeliğini ve metin tekrarlarını bağımsız olarak denetler."""
+    joined = clean_data.merge(manifest, on="article_id", how="outer", validate="one_to_one", indicator=True)
+    if not joined["_merge"].eq("both").all():
+        raise ValueError("Split manifesti ile veri kayıtları uyuşmuyor.")
+    if set(joined["split"]) != {"train", "validation", "test"}:
+        raise ValueError("Split manifesti geçerli üç bölmeyi içermiyor.")
+    keys = joined["text"].fillna("").astype(str).str.normalize("NFKC").str.replace(r"\s+", " ", regex=True).str.strip().str.casefold()
+    text_splits = pd.DataFrame({"key": keys, "split": joined["split"]}).groupby("key")["split"].nunique()
+    overlaps = int(text_splits.gt(1).sum())
+    if overlaps:
+        raise ValueError(f"Veri sızıntısı: {overlaps} aynı metin birden fazla bölmede!")
+    # Bu ölçüm yakın tekrarların tamamını tespit etmez; inceleme için sinyaldir.
+    prefixes = keys.str.slice(0, 300)
+    prefix_splits = pd.DataFrame({"prefix": prefixes, "split": joined["split"]}).groupby("prefix")["split"].nunique()
+    prefix_overlaps = int(prefix_splits.gt(1).sum())
+    if prefix_overlaps:
+        raise ValueError(f"Veri sızıntısı riski: {prefix_overlaps} ortak başlangıç farklı bölmelerde!")
+    return {"identical_text_groups_across_splits": overlaps,
+            "same_300_character_prefix_groups_across_splits": prefix_overlaps}
 
 
 def save_prepared_data(
@@ -162,11 +171,13 @@ def save_prepared_data(
         )
 
     split_manifest = create_split_manifest(clean_data, seed=seed)
+    audit = audit_split(clean_data, split_manifest)
     split_with_label = split_manifest.merge(
         clean_data[["article_id", "label"]], on="article_id", validate="one_to_one"
     )
     split_summary = {
         "seed": seed,
+        "audit": audit,
         "split_counts": {
             name: int(count)
             for name, count in split_manifest["split"].value_counts().sort_index().items()
@@ -208,6 +219,7 @@ def load_prepared_splits(data_dir: Path, seed: int = 42) -> dict[str, pd.DataFra
     merged = manifest.merge(clean_data, on="article_id", how="inner", validate="one_to_one")
     if len(merged) != len(clean_data):
         raise ValueError("Split manifesti ile temiz veri birbiriyle uyuşmuyor.")
+    audit_split(clean_data, manifest)
     return {
         split_name: group.reset_index(drop=True)
         for split_name, group in merged.groupby("split", sort=False)
