@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
+import math
 import shutil
 from pathlib import Path
 
@@ -93,6 +95,55 @@ def _write_experiment_summary(
     (output_dir / "deney_ozeti.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def build_training_arguments(
+    config: ExperimentConfig,
+    checkpoint_dir: Path,
+    train_size: int,
+    use_cuda: bool,
+) -> TrainingArguments:
+    """Yüklü Transformers sürümüyle uyumlu TrainingArguments üretir.
+
+    Colab imajları farklı Transformers sürümleriyle gelebilir. Bazı eski
+    sürümlerde ``warmup_ratio`` ve ``eval_strategy`` yerine sırasıyla
+    ``warmup_steps`` ve ``evaluation_strategy`` kullanılır.
+    """
+    parameters = inspect.signature(TrainingArguments.__init__).parameters
+    steps_per_epoch = math.ceil(
+        train_size / (config.per_device_train_batch_size * config.gradient_accumulation_steps)
+    )
+    estimated_total_steps = math.ceil(steps_per_epoch * config.num_train_epochs)
+    arguments: dict[str, object] = {
+        "output_dir": str(checkpoint_dir),
+        "num_train_epochs": config.num_train_epochs,
+        "learning_rate": config.learning_rate,
+        "weight_decay": config.weight_decay,
+        "per_device_train_batch_size": config.per_device_train_batch_size,
+        "per_device_eval_batch_size": config.per_device_eval_batch_size,
+        "gradient_accumulation_steps": config.gradient_accumulation_steps,
+        "save_strategy": "epoch",
+        "logging_strategy": "steps",
+        "logging_steps": config.logging_steps,
+        "load_best_model_at_end": True,
+        "metric_for_best_model": "f1",
+        "greater_is_better": True,
+        "save_total_limit": 2,
+        "fp16": use_cuda,
+        "report_to": "none",
+        "seed": config.seed,
+    }
+    if "warmup_ratio" in parameters:
+        arguments["warmup_ratio"] = config.warmup_ratio
+    else:
+        arguments["warmup_steps"] = round(estimated_total_steps * config.warmup_ratio)
+    if "eval_strategy" in parameters:
+        arguments["eval_strategy"] = "epoch"
+    else:
+        arguments["evaluation_strategy"] = "epoch"
+    if "data_seed" in parameters:
+        arguments["data_seed"] = config.seed
+    return TrainingArguments(**arguments)
+
+
 def run_experiment(
     config: ExperimentConfig,
     config_path: Path,
@@ -126,27 +177,11 @@ def run_experiment(
     }
 
     use_cuda = torch.cuda.is_available()
-    arguments = TrainingArguments(
-        output_dir=str(checkpoint_dir),
-        num_train_epochs=config.num_train_epochs,
-        learning_rate=config.learning_rate,
-        weight_decay=config.weight_decay,
-        warmup_ratio=config.warmup_ratio,
-        per_device_train_batch_size=config.per_device_train_batch_size,
-        per_device_eval_batch_size=config.per_device_eval_batch_size,
-        gradient_accumulation_steps=config.gradient_accumulation_steps,
-        eval_strategy="epoch",
-        save_strategy="epoch",
-        logging_strategy="steps",
-        logging_steps=config.logging_steps,
-        load_best_model_at_end=True,
-        metric_for_best_model="f1",
-        greater_is_better=True,
-        save_total_limit=2,
-        fp16=use_cuda,
-        report_to="none",
-        seed=config.seed,
-        data_seed=config.seed,
+    arguments = build_training_arguments(
+        config=config,
+        checkpoint_dir=checkpoint_dir,
+        train_size=len(datasets["train"]),
+        use_cuda=use_cuda,
     )
     trainer = Trainer(
         model=model,
