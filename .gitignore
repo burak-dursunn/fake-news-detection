@@ -1,0 +1,32 @@
+# Data files and generated experiment artifacts (too large for git)
+*.csv
+artifacts/
+outputs/
+checkpoints/
+wandb/
+
+# Model weights and legacy/generated training results
+models/
+results/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
