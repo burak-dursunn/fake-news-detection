@@ -93,18 +93,25 @@ def prepare_combined(folder: Path, seed: int):
     return data, info
 
 
-def load_isot_test(folder: Path, seed: int):
-    clean, manifest = folder / "isot_temiz.csv", folder / f"isot_split_seed{seed}.csv"
-    if not clean.is_file() or not manifest.is_file():
-        raise FileNotFoundError(f"ISOT temiz CSV ve split dosyası bulunamadı: {folder}")
+def load_isot_test(folder: Path, seed: int, sample_size: int = 10_000):
+    clean = folder / "isot_temiz.csv"
+    if not clean.is_file():
+        raise FileNotFoundError(f"ISOT temiz CSV bulunamadı: {clean}")
     data = pd.read_csv(clean, low_memory=False)
-    split = pd.read_csv(manifest)
-    merged = data.merge(split[["article_id", "split"]], on="article_id", how="outer", validate="one_to_one", indicator=True)
-    if not merged["_merge"].eq("both").all():
-        raise ValueError("ISOT temiz veri ile split dosyası eşleşmiyor.")
-    test = merged.loc[merged.split.eq("test"), ["article_id", "text", "label"]].copy()
-    if test.empty or test.text.isna().any() or not test.label.isin([0, 1]).all():
+    if not {"article_id", "text", "label"}.issubset(data.columns):
+        raise ValueError("ISOT verisinde article_id, text ve label sütunları gerekli.")
+    if data.article_id.isna().any() or data.article_id.duplicated().any():
+        raise ValueError("ISOT haber kimlikleri boş veya tekrarlı.")
+    labels = pd.to_numeric(data.label, errors="coerce")
+    if (data.text.isna().any() or data.text.astype(str).str.strip().eq("").any()
+            or not labels.isin([0, 1]).all() or set(labels.unique()) != {0, 1}):
         raise ValueError("ISOT test verisi boş veya geçersiz.")
+    if len(data) <= sample_size:
+        raise ValueError(f"{sample_size} haber seçmek için yeterli ISOT kaydı yok: {len(data)}")
+    data["label"] = labels.astype(int)
+    _, indices = train_test_split(np.arange(len(data)), test_size=sample_size,
+                                   random_state=seed, stratify=data.label)
+    test = data.iloc[indices][["article_id", "text", "label"]].copy()
     test["text"] = test.text.astype(str).map(norm)
     test["title"] = ""  # Combined Corpus'ta başlık yok; her iki veri için aynı girdi.
     return test.reset_index(drop=True)
@@ -128,7 +135,9 @@ def main():
         raise ValueError("ISOT test bölmesinde iki sınıf da olmalı.")
     info.update({"isot_test_sayisi": len(test), "isot_klasoru": str(a.isot_dir),
                  "isot_temiz_sha256": sha256(a.isot_dir / "isot_temiz.csv"),
-                 "isot_split_sha256": sha256(a.isot_dir / f"isot_split_seed{config.seed}.csv"),
+                 "isot_secimi": {"yontem": "sınıf oranları korunarak rastgele örnekleme",
+                                  "rastgele_tohum": config.seed, "kaynak": "temiz ISOT verisinin tamamı"},
+                 "isot_test_etiket_sayilari": {str(k): int(v) for k, v in test.label.value_counts().sort_index().items()},
                  "model_girdisi": "Her iki veri kümesinde yalnız haber metni; başlık boş",
                  "etiket_varsayimi": {"0": "gerçek", "1": "sahte"},
                  "sinir": "Combined Corpus ve ISOT arasında benzerlik kontrolü yapılmadı."})
