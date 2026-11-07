@@ -10,7 +10,9 @@ from sklearn.metrics import (
     ConfusionMatrixDisplay,
     PrecisionRecallDisplay,
     RocCurveDisplay,
+    average_precision_score,
     confusion_matrix,
+    roc_auc_score,
 )
 
 from src.metrics import probabilities_from_logits
@@ -88,13 +90,17 @@ def plot_test_curves_and_matrix(
 
     figure, axis = plt.subplots(figsize=(6.5, 5.5))
     RocCurveDisplay.from_predictions(labels, fake_probability, name="Model", ax=axis)
-    axis.set_title("ROC Eğrisi")
+    axis.lines[0].set_label(f"Model (AUC = {roc_auc_score(labels, fake_probability):.4f})")
+    axis.legend(loc="lower right")
+    axis.set(title="ROC Eğrisi", xlabel="Yanlış pozitif oranı", ylabel="Doğru pozitif oranı")
     axis.grid(alpha=0.25)
     _save(figure, output_dir / "03_ROC_Egrisi.png")
 
     figure, axis = plt.subplots(figsize=(6.5, 5.5))
     PrecisionRecallDisplay.from_predictions(labels, fake_probability, name="Model", ax=axis)
-    axis.set_title("Precision-Recall Eğrisi")
+    axis.lines[0].set_label(f"Model (AP = {average_precision_score(labels, fake_probability):.4f})")
+    axis.legend(loc="lower left")
+    axis.set(title="Kesinlik ve Duyarlılık Eğrisi", xlabel="Duyarlılık (sahte haber)", ylabel="Kesinlik (sahte haber)")
     axis.grid(alpha=0.25)
     _save(figure, output_dir / "04_Precision_Recall_Egrisi.png")
 
@@ -103,5 +109,5 @@ def plot_test_curves_and_matrix(
     ConfusionMatrixDisplay(matrix, display_labels=["Gerçek", "Sahte"]).plot(
         ax=axis, colorbar=False, cmap="Blues"
     )
-    axis.set_title("Karışıklık Matrisi")
+    axis.set(title="Karışıklık Matrisi", xlabel="Tahmin edilen sınıf", ylabel="Gerçek etiket")
     _save(figure, output_dir / "05_Karisiklik_Matrisi.png")

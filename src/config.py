@@ -22,8 +22,11 @@ class ExperimentConfig:
     seed: int = 42
     early_stopping_patience: int = 2
     logging_steps: int = 100
+    dataset_name: str = "welfake"
 
     def validate(self) -> None:
+        if self.dataset_name not in {"welfake", "isot"}:
+            raise ValueError("dataset_name welfake veya isot olmalıdır.")
         if not self.experiment_name.strip():
             raise ValueError("experiment_name boş olamaz.")
         if self.max_length not in {128, 256, 384, 512}:

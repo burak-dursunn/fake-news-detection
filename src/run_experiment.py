@@ -1,4 +1,4 @@
-"""Config dosyasına göre WELFake üzerinde tek bir model deneyi çalıştırır."""
+"""Config dosyasındaki veri seti üzerinde tek bir model deneyi çalıştırır."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import inspect
 import json
 import math
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -26,7 +28,7 @@ from transformers import (
 
 from src.config import ExperimentConfig, load_config
 from src.data import load_prepared_splits
-from src.metrics import classification_metrics
+from src.metrics import classification_metrics, probabilities_from_logits
 from src.plots import plot_test_curves_and_matrix, plot_training_history
 
 
@@ -58,7 +60,7 @@ class NewsDataset(Dataset):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Tek bir WELFake model deneyi çalıştırır.")
+    parser = argparse.ArgumentParser(description="Tek bir haber sınıflandırma deneyi çalıştırır.")
     parser.add_argument("--config", type=Path, required=True, help="Deney JSON dosyası.")
     parser.add_argument(
         "--data-dir", type=Path, required=True, help="prepare_data çıktılarının klasörü."
@@ -95,6 +97,7 @@ def _write_experiment_summary(
         "",
         "## Deney ayarları",
         f"- Model: `{config.model_name}`",
+        f"- Veri seti: `{config.dataset_name}`",
         f"- Maksimum token: {config.max_length}",
         f"- Öğrenme oranı: {config.learning_rate}",
         f"- Etkin batch boyutu: {config.effective_batch_size}",
@@ -166,28 +169,35 @@ def run_experiment(
 ) -> dict[str, float]:
     output_dir = output_root / config.experiment_name
     if output_dir.exists():
-        completed = (output_dir / "test_metrikleri.json").is_file()
-        if completed and not overwrite:
+        if not overwrite:
             raise FileExistsError(
                 f"Deney klasörü zaten var: {output_dir}. Yeniden yazmak için --overwrite kullanın."
             )
-        if not completed:
-            print("Tamamlanmamış önceki deney çıktısı temizlenerek eğitim yeniden başlatılıyor.")
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True)
     shutil.copy2(config_path, output_dir / "kullanilan_config.json")
+    (output_dir / "paket_surumu.txt").write_text(
+        subprocess.check_output([sys.executable, "-m", "pip", "freeze"], text=True), encoding="utf-8"
+    )
     checkpoint_dir = (checkpoint_root or output_root) / config.experiment_name / "checkpointler"
 
     set_seed(config.seed)
     print("[1/6] Temiz veri ve sabit bölmeler okunuyor...", flush=True)
-    splits = load_prepared_splits(data_dir, seed=config.seed, audit=not skip_split_audit)
+    splits = load_prepared_splits(data_dir, seed=config.seed, audit=not skip_split_audit,
+                                  dataset_name=config.dataset_name)
+    if config.dataset_name == "isot":
+        shutil.copy2(data_dir / "isot_hazirlama_raporu.json", output_dir / "kullanilan_veri_raporu.json")
     required_splits = {"train", "validation", "test"}
     if set(splits) != required_splits:
         raise ValueError(f"Eksik veya beklenmeyen veri bölmesi: {sorted(splits)}")
 
     print(f"[3/6] Model indiriliyor/yükleniyor: {config.model_name}", flush=True)
     tokenizer = AutoTokenizer.from_pretrained(config.model_name, use_fast=True)
-    model = AutoModelForSequenceClassification.from_pretrained(config.model_name, num_labels=2)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        config.model_name, num_labels=2,
+        id2label={0: "Gercek", 1: "Sahte"}, label2id={"Gercek": 0, "Sahte": 1},
+    )
+    test_records = splits["test"][["article_id", "label"]].copy()
     datasets = {}
     for name in list(splits):
         print(f"[4/6] {name} metinleri tokenlara dönüştürülüyor...", flush=True)
@@ -217,6 +227,9 @@ def run_experiment(
     print("[6/6] Test ve grafikler hazırlanıyor...", flush=True)
     prediction = trainer.predict(datasets["test"], metric_key_prefix="test")
     test_metrics = classification_metrics(prediction.label_ids, prediction.predictions)
+    test_records["sahte_olasiligi"] = probabilities_from_logits(prediction.predictions)
+    test_records["tahmin"] = (test_records["sahte_olasiligi"] >= 0.5).astype(int)
+    test_records.to_csv(output_dir / "test_tahminleri.csv", index=False, encoding="utf-8")
     (output_dir / "test_metrikleri.json").write_text(
         json.dumps(test_metrics, ensure_ascii=False, indent=2), encoding="utf-8"
     )

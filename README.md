@@ -1,7 +1,27 @@
 # 🔍 Fake News Detection with Transformer Models
 
-WELFake veri seti üzerinde DistilBERT, RoBERTa Base ve RoBERTa Large
-modellerinin adil ve tekrar üretilebilir karşılaştırması için proje altyapısı.
+Aktif ilk deney: yalnızca **ISOT**, temel DistilBERT modeli, 256 token, 2 epoch.
+WELFake deneyleri arşiv olarak korunur; yeni eğitime katılmaz.
+Sonraki aşama AVeriTeC üzerinde kanıt arama ve kaynaklı açıklama (RAG) olacaktır.
+
+## Güncel Colab başlangıcı
+
+- Notebook: [ISOT DistilBERT 256 Token](notebooks/ISOT_DistilBERT_256Token_Egitimi.ipynb)
+- [Colab'da aç](https://colab.research.google.com/github/burak-dursunn/fake-news-detection/blob/main/notebooks/ISOT_DistilBERT_256Token_Egitimi.ipynb): kod doğrudan GitHub'dan alınır; Drive'a kod paketi yüklenmez.
+- Ayrıntılı kurulum ve araştırma planı: [ISOT ve AVeriTeC planı](docs/ISOT_ve_AVeriTeC_Plani.md)
+- Ortam: `requirements-colab.txt`; config: `configs/ISOT_01_DistilBERT_256Token.json`.
+- Veri hazırlama: `python -m src.prepare_isot --true true.csv --fake fake.csv --output-dir artifacts/isot/prepared_seed42_v1`.
+- Eğitim **Colab GPU'da**: `python -u -m src.run_experiment --config configs/ISOT_01_DistilBERT_256Token.json --data-dir /content/isot_hazir_v1 --output-root /content/drive/MyDrive/fake_news_detection/sonuclar/ISOT --skip-split-audit`.
+
+ISOT'ta benzer haberler bölmeden önce gruplanır. Kontrol raporu ve dosya özetleri
+her yüklemede doğrulanır; pahalı benzerlik taraması tekrarlanmaz. Kaynak farkı ve
+yaklaşık benzerlik aramasının sınırları raporda belirtilir. Yüksek skor, haberin
+gerçek dünyadaki doğruluğunun bağımsız olarak doğrulandığı anlamına gelmez.
+
+Model yalnızca `title` ve `text` alanlarını girdi olarak alır; `label` hedef sınıftır.
+`subject` ve `date` eğitim tablosuna alınmaz. Ham dosyalarda saklanırlar.
+
+**Aşağıdaki WELFake komutları eski deneylerin yeniden üretimi içindir.**
 
 ## 📁 Project Structure
 

@@ -55,11 +55,16 @@ def load_and_clean_welfake(input_path: Path) -> tuple[pd.DataFrame, CleaningRepo
     korunur; model o haberi yalnızca metniyle görür.
     """
     raw = pd.read_csv(input_path, encoding="utf-8", low_memory=False)
+    return clean_news_frame(raw)
+
+
+def clean_news_frame(raw: pd.DataFrame) -> tuple[pd.DataFrame, CleaningReport]:
+    """Etiketli haber tablosunu temizler; etiketlerin anlamsal doğruluğunu değiştirmez."""
     required_columns = {"title", "text", "label"}
     missing_columns = required_columns.difference(raw.columns)
     if missing_columns:
         raise ValueError(
-            "WELFake dosyasında zorunlu sütunlar eksik: "
+            "Haber tablosunda zorunlu sütunlar eksik: "
             f"{', '.join(sorted(missing_columns))}"
         )
 
@@ -205,14 +210,20 @@ def save_prepared_data(
     )
 
 
-def load_prepared_splits(data_dir: Path, seed: int = 42, audit: bool = True) -> dict[str, pd.DataFrame]:
+def load_prepared_splits(data_dir: Path, seed: int = 42, audit: bool = True,
+                         dataset_name: str = "welfake") -> dict[str, pd.DataFrame]:
     """Temiz veriyle manifesti birleştirip eğitim kümelerini döndürür.
 
     Bu fonksiyon modelden bağımsızdır: aynı manifest her model, token uzunluğu
     ve hiperparametre denemesinde yeniden kullanılır.
     """
-    clean_path = data_dir / "welfake_temiz.csv"
-    manifest_path = data_dir / f"welfake_split_seed{seed}.csv"
+    if dataset_name not in {"welfake", "isot"}:
+        raise ValueError(f"Desteklenmeyen veri seti: {dataset_name}")
+    if dataset_name == "isot":
+        from src.prepare_isot import verify_prepared_isot
+        verify_prepared_isot(data_dir, seed)
+    clean_path = data_dir / f"{dataset_name}_temiz.csv"
+    manifest_path = data_dir / f"{dataset_name}_split_seed{seed}.csv"
     if not clean_path.is_file() or not manifest_path.is_file():
         raise FileNotFoundError(
             "Hazırlanmış veri bulunamadı. Önce `python -m src.prepare_data` "
