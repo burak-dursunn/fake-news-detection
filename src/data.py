@@ -205,7 +205,7 @@ def save_prepared_data(
     )
 
 
-def load_prepared_splits(data_dir: Path, seed: int = 42) -> dict[str, pd.DataFrame]:
+def load_prepared_splits(data_dir: Path, seed: int = 42, audit: bool = True) -> dict[str, pd.DataFrame]:
     """Temiz veriyle manifesti birleştirip eğitim kümelerini döndürür.
 
     Bu fonksiyon modelden bağımsızdır: aynı manifest her model, token uzunluğu
@@ -221,11 +221,16 @@ def load_prepared_splits(data_dir: Path, seed: int = 42) -> dict[str, pd.DataFra
     clean_data = pd.read_csv(clean_path, encoding="utf-8", low_memory=False)
     manifest = pd.read_csv(manifest_path, encoding="utf-8")
     merged = manifest.merge(clean_data, on="article_id", how="inner", validate="one_to_one")
-    if len(merged) != len(clean_data):
+    if len(merged) != len(clean_data) or len(merged) != len(manifest):
         raise ValueError("Split manifesti ile temiz veri birbiriyle uyuşmuyor.")
-    print("[2/6] Eğitim ve test verisi sızıntı kontrolünden geçiriliyor...", flush=True)
-    audit_split(clean_data, manifest)
-    print("[2/6] Sızıntı kontrolü tamamlandı.", flush=True)
+    if set(merged["split"]) != {"train", "validation", "test"}:
+        raise ValueError("Split manifesti geçerli üç bölmeyi içermiyor.")
+    if audit:
+        print("[2/6] Eğitim ve test verisi sızıntı kontrolünden geçiriliyor...", flush=True)
+        audit_split(clean_data, manifest)
+        print("[2/6] Sızıntı kontrolü tamamlandı.", flush=True)
+    else:
+        print("[2/6] Ayrıntılı metin sızıntısı kontrolü atlandı; kayıt kimlikleri kontrol edildi.", flush=True)
     return {
         split_name: group.reset_index(drop=True)
         for split_name, group in merged.groupby("split", sort=False)

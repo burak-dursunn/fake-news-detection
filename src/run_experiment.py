@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+print("Eğitim programı başlatılıyor; Python paketleri yükleniyor...", flush=True)
+
 import argparse
 import inspect
 import json
@@ -75,6 +77,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--overwrite", action="store_true", help="Aynı adlı deney klasörünün üzerine yazar."
+    )
+    parser.add_argument(
+        "--skip-split-audit", action="store_true",
+        help="Daha önce denetlenmiş veride ayrıntılı metin sızıntısı kontrolünü atla.",
     )
     return parser.parse_args()
 
@@ -156,6 +162,7 @@ def run_experiment(
     output_root: Path,
     checkpoint_root: Path | None = None,
     overwrite: bool = False,
+    skip_split_audit: bool = False,
 ) -> dict[str, float]:
     output_dir = output_root / config.experiment_name
     if output_dir.exists():
@@ -173,7 +180,7 @@ def run_experiment(
 
     set_seed(config.seed)
     print("[1/6] Temiz veri ve sabit bölmeler okunuyor...", flush=True)
-    splits = load_prepared_splits(data_dir, seed=config.seed)
+    splits = load_prepared_splits(data_dir, seed=config.seed, audit=not skip_split_audit)
     required_splits = {"train", "validation", "test"}
     if set(splits) != required_splits:
         raise ValueError(f"Eksik veya beklenmeyen veri bölmesi: {sorted(splits)}")
@@ -236,6 +243,7 @@ def main() -> None:
         output_root=args.output_root,
         checkpoint_root=args.checkpoint_root,
         overwrite=args.overwrite,
+        skip_split_audit=args.skip_split_audit,
     )
     print("Nihai test metrikleri:")
     for name, value in metrics.items():
