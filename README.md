@@ -6,6 +6,15 @@ Sonraki aşama AVeriTeC üzerinde kanıt arama ve kaynaklı açıklama (RAG) ola
 
 ## Güncel Colab başlangıcı
 
+### Combined Corpus ile eğitim → ISOT ile test
+
+- [Combined Corpus Train / ISOT Test notebook'u](notebooks/Combined_Corpus_Train_ISOT_Test_DistilBERT.ipynb) DistilBERT modelini sıfırdan görev eğitimiyle başlatır.
+- Kaynak deponun yalnızca Train klasöründeki 29 parça sabit commit üzerinden indirilir; özgün parçalar bazı çok satırlı haberlerin ortasında kesildiğinden doğru sırada birleştirilir.
+- Eğitim verisinin %10'u model seçimi için doğrulamaya ayrılır; `isot_split_seed42.csv` içindeki test haberleri yalnızca son testte kullanılır.
+- Önceki testle aynı kullanıcı varsayımı (`0 = gerçek`, `1 = sahte`) kullanılır; Combined Corpus'un kaynak etiket anlamı bağımsız olarak doğrulanmamıştır. Değişmesi gerekirse eğitim yeniden yapılmalıdır.
+- Her iki veri kümesinde de yalnız haber gövdesi kullanılır. ISOT dosyasının Reuters içerip içermemesi seçilen hazır veri sürümüne bağlıdır.
+- Kayıtlı sonuçlar: `sonuclar/Combined_Corpus_Train_ISOT_Test`; veriler ve ağırlıklar Git'e gönderilmez.
+
 ### ISOT modeliyle Combined Corpus dış testi
 
 - Notebook: [ISOT DistilBERT Combined Corpus testi](notebooks/ISOT_DistilBERT_Combined_Corpus_Test.ipynb).

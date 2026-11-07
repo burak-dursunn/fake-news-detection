@@ -25,8 +25,8 @@ class ExperimentConfig:
     dataset_name: str = "welfake"
 
     def validate(self) -> None:
-        if self.dataset_name not in {"welfake", "isot"}:
-            raise ValueError("dataset_name welfake veya isot olmalıdır.")
+        if self.dataset_name not in {"welfake", "isot", "combined_corpus"}:
+            raise ValueError("dataset_name welfake, isot veya combined_corpus olmalıdır.")
         if not self.experiment_name.strip():
             raise ValueError("experiment_name boş olamaz.")
         if self.max_length not in {128, 256, 384, 512}:
