@@ -20,7 +20,6 @@ from src.plots import plot_test_curves_and_matrix
 
 def clean_text(text: str) -> str:
     text = unicodedata.normalize("NFKC", text)
-    text = re.sub(r"\(\s*reuters\s*\)|\breuters\b", " ", text, flags=re.IGNORECASE)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -99,7 +98,7 @@ def main() -> None:
     args.output.mkdir(parents=True, exist_ok=True)
     report = {
         "model_klasoru": str(args.model), "etiketler": {"0": "gerçek", "1": "sahte"},
-        "girdi": "Boş başlık + haber metni; Reuters ifadesi kaldırıldı",
+        "girdi": "Boş başlık + haber metni; Reuters ifadeleri korundu",
         "max_token": args.max_length, "esik": 0.5,
         "dosyalar": files, "kayit_sayisi": len(data),
         "etiket_sayilari": {str(k): int(v) for k, v in data.label.value_counts().sort_index().items()},
