@@ -6,6 +6,15 @@ Sonraki aşama AVeriTeC üzerinde kanıt arama ve kaynaklı açıklama (RAG) ola
 
 ## Güncel Colab başlangıcı
 
+### ISOT modeliyle Combined Corpus dış testi
+
+- Notebook: [ISOT DistilBERT Combined Corpus testi](notebooks/ISOT_DistilBERT_Combined_Corpus_Test.ipynb).
+- CSV dosyalarını Drive'da `fake_news_detection/data/Combined_Corpus_Test_Klasörü` altında tutun.
+- Notebook'ta Reuters çıkarılmış ISOT verisiyle eğitilmiş modelin `en_iyi_model` klasörünü seçin.
+- Test yeniden eğitim yapmaz; `0 = gerçek`, `1 = sahte` eşlemesini kullanır. Metinlerdeki Reuters ifadesi çıkarılır, ayrı başlık olmadığı için boş başlıkla test edilir.
+- Tüm satırlar değerlendirilir; rapor tekrarlanan metin sayısını ve 256 token sınırını aşan kayıt sayısını içerir. ISOT ile benzerlik kontrolü yapılmaz.
+- Metrikler, tahminler ve grafikler Drive'da `sonuclar/Combined_Corpus_Test` altında tarihli bir klasöre kaydedilir.
+
 - Notebook: [ISOT DistilBERT 256 Token](notebooks/ISOT_DistilBERT_256Token_Egitimi.ipynb)
 - [Colab'da aç](https://colab.research.google.com/github/burak-dursunn/fake-news-detection/blob/main/notebooks/ISOT_DistilBERT_256Token_Egitimi.ipynb): kod doğrudan GitHub'dan alınır; Drive'a kod paketi yüklenmez.
 - Ayrıntılı kurulum ve araştırma planı: [ISOT ve AVeriTeC planı](docs/ISOT_ve_AVeriTeC_Plani.md)
