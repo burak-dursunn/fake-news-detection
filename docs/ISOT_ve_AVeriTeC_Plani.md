@@ -23,11 +23,13 @@ Varsayılan Drive projesi: `/content/drive/MyDrive/fake_news_detection`.
 
 1. Yeni notebook'u Colab'da açın ve GPU çalışma zamanı seçin.
 2. Kod kurulum hücresi repoyu doğrudan GitHub main dalından indirir. Mevcut temiz kopya varsa `git pull --ff-only` ile günceller; yerel düzenlemelerin üzerine yazmaz. Drive'a kod paketi yüklemeniz gerekmez. Kullanılan Git commit kimliği sonuçlarla saklanır.
-3. Yerelde hazırlanan üç dosyayı `fake_news_detection/data/ISOT/hazir_v1/` içine yükleyebilirsiniz: `isot_temiz.csv`, `isot_split_seed42.csv`, `isot_hazirlama_raporu.json`. Bunlar varsa tekrar temizleme yapılmaz. Dosya özetleri ve grup üyelikleri doğrulanır.
-4. Bu dosyalar yoksa notebook ISOT'u Kaggle'dan indirir, ham kopyaları Drive'a kaydeder; bir kez hazırlayıp üç çıktı dosyasını da Drive'a yazar. Kısmi kopya varsa sessizce devam etmez.
+3. Hazır üç dosya: `isot_temiz.csv`, `isot_split_seed42.csv`, `isot_hazirlama_raporu.json`. Notebook önce `UPLOADED_PREPARED_DIR` (varsayılan `fake_news_detection/data/raw/`), ardından `fake_news_detection/data/ISOT/hazir_v1/` ve Drive ana dizinindeki `data/raw/` klasörlerine bakar. Farklı konum için `UPLOADED_PREPARED_DIR` değişkenini düzenleyin. Seçilen klasör ekrana yazılır. Dosya özetleri ve grup üyelikleri doğrulanır; yeniden temizlik yapılmaz.
+4. Hazır veri yoksa varsayılan davranış açıklayıcı hatayla durmaktır. Otomatik indirme yapılmaz. Ham veriden başlamak için `ALLOW_RAW_PREPARATION=True` seçilirse ham ISOT kullanılır/gerekirse Kaggle'dan indirilir ve temiz dosyalar Drive'a kaydedilir. Kısmi hazır dosyalar farklı klasörlerden birleştirilmez.
 5. Hücreleri sırayla çalıştırın. Çıktılar Drive'da `sonuclar/ISOT/ISOT_01_DistilBERT_256Token/`, checkpointler `checkpointler/ISOT/ISOT_01_DistilBERT_256Token/` altında tutulur.
 
 Çalışma zamanı yeniden başladığında kurulum ve veri kopyalama hücreleri yeniden çalıştırılmalıdır. Notebook daha önce oluşmuş deney klasörünü silmez; otomatik checkpoint devamı henüz yoktur. Kesilen eğitimi tekrar başlatmak için yeni bir deney adı seçin ve bunu raporda belirtin.
+
+Paketler: `transformers==5.22.1`, `huggingface-hub>=1.32.0,<3.0`, `accelerate>=1.1,<2`. Eski Transformers 4 sabitlemesi Hub paketini düşürüp Colab Gradio/Diffusers bağımlılıklarıyla çakışıyordu. Kurulum sonrası mevcut bu paketlerin Hub gereksinimleri ve eğitim sınıflarının yüklenmesi kontrol edilir. Bu kontrol Colab'daki tüm üçüncü taraf paketler için genel bir uyumluluk garantisi değildir. Eski kurulum hücresini çalıştırdıysanız güncel notebook'u açıp çalışma zamanını yeniden başlatarak hücreleri baştan çalıştırın.
 
 ## AVeriTeC ve RAG aşaması
 
