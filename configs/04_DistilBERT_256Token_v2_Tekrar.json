@@ -1,0 +1,15 @@
+{
+  "experiment_name": "04_DistilBERT_256Token_v2_Tekrar",
+  "model_name": "distilbert-base-uncased",
+  "max_length": 256,
+  "num_train_epochs": 2,
+  "learning_rate": 3e-5,
+  "weight_decay": 0.01,
+  "warmup_ratio": 0.1,
+  "per_device_train_batch_size": 16,
+  "per_device_eval_batch_size": 32,
+  "gradient_accumulation_steps": 1,
+  "seed": 42,
+  "early_stopping_patience": 2,
+  "logging_steps": 100
+}

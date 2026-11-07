@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Final
@@ -132,19 +134,21 @@ def audit_split(clean_data: pd.DataFrame, manifest: pd.DataFrame) -> dict:
         raise ValueError("Split manifesti ile veri kayıtları uyuşmuyor.")
     if set(joined["split"]) != {"train", "validation", "test"}:
         raise ValueError("Split manifesti geçerli üç bölmeyi içermiyor.")
-    keys = joined["text"].fillna("").astype(str).str.normalize("NFKC").str.replace(r"\s+", " ", regex=True).str.strip().str.casefold()
-    text_splits = pd.DataFrame({"key": keys, "split": joined["split"]}).groupby("key")["split"].nunique()
-    overlaps = int(text_splits.gt(1).sum())
-    if overlaps:
-        raise ValueError(f"Veri sızıntısı: {overlaps} aynı metin birden fazla bölmede!")
-    # Bu ölçüm yakın tekrarların tamamını tespit etmez; inceleme için sinyaldir.
-    prefixes = keys.str.slice(0, 300)
-    prefix_splits = pd.DataFrame({"prefix": prefixes, "split": joined["split"]}).groupby("prefix")["split"].nunique()
-    prefix_overlaps = int(prefix_splits.gt(1).sum())
-    if prefix_overlaps:
-        raise ValueError(f"Veri sızıntısı riski: {prefix_overlaps} ortak başlangıç farklı bölmelerde!")
-    return {"identical_text_groups_across_splits": overlaps,
-            "same_300_character_prefix_groups_across_splits": prefix_overlaps}
+    # Metinlerin büyük kopyalarını tutmak yerine yalnızca sabit boyutlu özetleri sakla.
+    seen_text: dict[bytes, str] = {}
+    seen_prefix: dict[bytes, str] = {}
+    for text, split in zip(joined["text"], joined["split"], strict=True):
+        normalized = re.sub(r"\s+", " ", unicodedata.normalize("NFKC", str(text) if pd.notna(text) else "")).strip().casefold()
+        for value, seen, description in (
+            (normalized, seen_text, "aynı metin"),
+            (normalized[:300], seen_prefix, "ortak başlangıç"),
+        ):
+            key = hashlib.sha256(value.encode("utf-8")).digest()
+            if key in seen and seen[key] != split:
+                raise ValueError(f"Veri sızıntısı riski: {description} farklı bölmelerde!")
+            seen[key] = split
+    return {"identical_text_groups_across_splits": 0,
+            "same_300_character_prefix_groups_across_splits": 0}
 
 
 def save_prepared_data(
@@ -219,7 +223,9 @@ def load_prepared_splits(data_dir: Path, seed: int = 42) -> dict[str, pd.DataFra
     merged = manifest.merge(clean_data, on="article_id", how="inner", validate="one_to_one")
     if len(merged) != len(clean_data):
         raise ValueError("Split manifesti ile temiz veri birbiriyle uyuşmuyor.")
+    print("[2/6] Eğitim ve test verisi sızıntı kontrolünden geçiriliyor...", flush=True)
     audit_split(clean_data, manifest)
+    print("[2/6] Sızıntı kontrolü tamamlandı.", flush=True)
     return {
         split_name: group.reset_index(drop=True)
         for split_name, group in merged.groupby("split", sort=False)

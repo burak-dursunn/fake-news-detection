@@ -33,13 +33,18 @@ class NewsDataset(Dataset):
 
     def __init__(self, frame, tokenizer, max_length: int) -> None:
         self.labels = frame["label"].astype(int).tolist()
-        self.encodings = tokenizer(
-            frame["title"].fillna("").tolist(),
-            frame["text"].fillna("").tolist(),
-            truncation=True,
-            max_length=max_length,
-            padding=False,
-        )
+        self.encodings = {}
+        for start in range(0, len(frame), 64):
+            batch = frame.iloc[start:start + 64]
+            encoded = tokenizer(
+                batch["title"].fillna("").tolist(),
+                batch["text"].fillna("").tolist(),
+                truncation=True, max_length=max_length, padding=False,
+            )
+            for key, values in encoded.items():
+                self.encodings.setdefault(key, []).extend(values)
+            if start % 6400 == 0:
+                print(f"  Metinler hazırlanıyor: {min(start + len(batch), len(frame))}/{len(frame)}", flush=True)
 
     def __len__(self) -> int:
         return len(self.labels)
@@ -167,17 +172,19 @@ def run_experiment(
     checkpoint_dir = (checkpoint_root or output_root) / config.experiment_name / "checkpointler"
 
     set_seed(config.seed)
+    print("[1/6] Temiz veri ve sabit bölmeler okunuyor...", flush=True)
     splits = load_prepared_splits(data_dir, seed=config.seed)
     required_splits = {"train", "validation", "test"}
     if set(splits) != required_splits:
         raise ValueError(f"Eksik veya beklenmeyen veri bölmesi: {sorted(splits)}")
 
-    print(f"Model indiriliyor/yükleniyor: {config.model_name}")
+    print(f"[3/6] Model indiriliyor/yükleniyor: {config.model_name}", flush=True)
     tokenizer = AutoTokenizer.from_pretrained(config.model_name, use_fast=True)
     model = AutoModelForSequenceClassification.from_pretrained(config.model_name, num_labels=2)
-    datasets = {
-        name: NewsDataset(frame, tokenizer, config.max_length) for name, frame in splits.items()
-    }
+    datasets = {}
+    for name in list(splits):
+        print(f"[4/6] {name} metinleri tokenlara dönüştürülüyor...", flush=True)
+        datasets[name] = NewsDataset(splits.pop(name), tokenizer, config.max_length)
 
     use_cuda = torch.cuda.is_available()
     arguments = build_training_arguments(
@@ -198,7 +205,9 @@ def run_experiment(
         callbacks=[EarlyStoppingCallback(early_stopping_patience=config.early_stopping_patience)],
     )
 
+    print("[5/6] GPU eğitimi başlıyor...", flush=True)
     trainer.train()
+    print("[6/6] Test ve grafikler hazırlanıyor...", flush=True)
     prediction = trainer.predict(datasets["test"], metric_key_prefix="test")
     test_metrics = classification_metrics(prediction.label_ids, prediction.predictions)
     (output_dir / "test_metrikleri.json").write_text(
