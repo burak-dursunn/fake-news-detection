@@ -9,9 +9,10 @@ Sonraki aşama AVeriTeC üzerinde kanıt arama ve kaynaklı açıklama (RAG) ola
 ### Combined Corpus ile eğitim → ISOT ile test
 
 - [Combined Corpus Train / ISOT Test notebook'u](notebooks/Combined_Corpus_Train_ISOT_Test_DistilBERT.ipynb) DistilBERT modelini sıfırdan görev eğitimiyle başlatır.
+- [RoBERTa-large notebook'u](notebooks/Combined_Corpus_Train_ISOT_Test_RoBERTaLarge.ipynb) aynı veri ve rastgele seçimle ayrı bir RoBERTa-large deneyi başlatır. Batch boyutu 2, birikim 8 ile etkin batch 16'dır.
 - Kaynak deponun yalnızca Train klasöründeki 29 parça sabit commit üzerinden indirilir; özgün parçalar bazı çok satırlı haberlerin ortasında kesildiğinden doğru sırada birleştirilir.
 - Eğitim verisinin %10'u model seçimi için doğrulamaya ayrılır; temiz ISOT verisinin tamamından sabit tohumla ve sınıf oranları korunarak seçilen 10.000 haber yalnızca son testte kullanılır.
-- Önceki testle aynı kullanıcı varsayımı (`0 = gerçek`, `1 = sahte`) kullanılır; Combined Corpus'un kaynak etiket anlamı bağımsız olarak doğrulanmamıştır. Değişmesi gerekirse eğitim yeniden yapılmalıdır.
+- Çalışma hipotezi: Combined Corpus `0 = sahte`, `1 = gerçek`; ISOT `0 = gerçek`, `1 = sahte`. Yeni eğitimlerde Combined Corpus etiketleri ISOT düzenine çevrilir; kaynak etiket anlamı yazarların doğrudan 0/1 tanımıyla henüz doğrulanmamıştır. Önceki deneylerde dönüşüm yoktur; sonuçlar ayrı yorumlanmalıdır.
 - Her iki veri kümesinde de yalnız haber gövdesi kullanılır. ISOT dosyasının Reuters içerip içermemesi seçilen hazır veri sürümüne bağlıdır.
 - Kayıtlı sonuçlar: `sonuclar/Combined_Corpus_Train_ISOT_Test`; veriler ve ağırlıklar Git'e gönderilmez.
 

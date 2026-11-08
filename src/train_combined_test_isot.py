@@ -128,12 +128,18 @@ def prepare_combined(folder: Path, seed: int):
                                           random_state=seed, stratify=data.label)
     data["split"] = "train"
     data.loc[val_idx, "split"] = "validation"
+    # Varsayılan kaynak eşlemesi: Combined 0=sahte, 1=gerçek.
+    # Modelin tüm çıktıları ISOT ile aynı düzene dönüştürülür: 0=gerçek, 1=sahte.
+    # Bölme kaynak etiketleriyle yapıldı; önceki DistilBERT deneyiyle aynıdır.
+    data["kaynak_etiket"] = data["label"]
+    data["label"] = 1 - data["kaynak_etiket"]
     data["title"] = ""
     info = {"girdi_satir_sayisi": initial, "bos_gecersiz_satir": bad_count,
             "celiskili_tekrar_satirlari": conflict_count, "tekrar_satirlari": before - len(data),
             "egitim_sayisi": len(train_idx), "dogrulama_sayisi": len(val_idx),
-            "etiket_sayilari": {str(k): int(v) for k, v in data.label.value_counts().sort_index().items()},
-            "not": "Kaynak Train bölmesinden %10 doğrulama ayrıldı. Etiket anlamı kullanıcı varsayımıdır; kaynak tarafından doğrulanmadı."}
+            "kaynak_etiket_sayilari": {str(k): int(v) for k, v in data.kaynak_etiket.value_counts().sort_index().items()},
+            "model_etiket_sayilari": {str(k): int(v) for k, v in data.label.value_counts().sort_index().items()},
+            "not": "Kaynak Train bölmesinden %10 doğrulama ayrıldı; etiketler çalışma hipoteziyle ISOT düzenine çevrildi."}
     return data, info
 
 
@@ -184,7 +190,8 @@ def main():
                                   "rastgele_tohum": config.seed, "kaynak": "temiz ISOT verisinin tamamı"},
                  "isot_test_etiket_sayilari": {str(k): int(v) for k, v in test.label.value_counts().sort_index().items()},
                  "model_girdisi": "Her iki veri kümesinde yalnız haber metni; başlık boş",
-                 "etiket_varsayimi": {"0": "gerçek", "1": "sahte"},
+                 "combined_kaynak_etiket_hipotezi": {"0": "sahte", "1": "gerçek"},
+                 "model_ve_isot_etiketleri": {"0": "gerçek", "1": "sahte"},
                  "sinir": "Combined Corpus ve ISOT arasında benzerlik kontrolü yapılmadı."})
     a.output.mkdir(parents=True)
     (a.output / "veri_ozeti.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -192,7 +199,7 @@ def main():
     manifest_path = a.combined_train / "indirme_kaynagi.json"
     if manifest_path.exists():
         (a.output / "combined_kaynak.json").write_bytes(manifest_path.read_bytes())
-    data[["kaynak_dosya", "kaynak_satir", "label", "text_key", "split"]].to_csv(a.output / "combined_egitim_dogrulama_bolmesi.csv", index=False)
+    data[["kaynak_dosya", "kaynak_satir", "kaynak_etiket", "label", "text_key", "split"]].to_csv(a.output / "combined_egitim_dogrulama_bolmesi.csv", index=False)
     print("Veri özeti:", json.dumps(info, ensure_ascii=False), flush=True)
     print(f"[4/7] Model indiriliyor/yükleniyor: {config.model_name}", flush=True)
     tokenizer = AutoTokenizer.from_pretrained(config.model_name, use_fast=True)
