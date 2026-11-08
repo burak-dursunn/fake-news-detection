@@ -1,12 +1,15 @@
 """Combined Corpus eğitim/doğrulama ve ISOT test bölmesiyle ayrı deney."""
 from __future__ import annotations
 
+print("[1/7] Program başladı; eğitim paketleri yükleniyor...", flush=True)
+
 import argparse
 import hashlib
 import json
 import re
 import shutil
 import tempfile
+import time
 import unicodedata
 from pathlib import Path
 
@@ -16,7 +19,8 @@ import torch
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from transformers import (AutoModelForSequenceClassification, AutoTokenizer,
-                          DataCollatorWithPadding, EarlyStoppingCallback, Trainer, set_seed)
+                          DataCollatorWithPadding, EarlyStoppingCallback, Trainer, TrainerCallback, set_seed)
+from transformers.trainer_callback import PrinterCallback
 
 from src.config import load_config
 from src.metrics import classification_metrics, probabilities_from_logits
@@ -36,6 +40,42 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def map_progress(series: pd.Series, function, name: str) -> pd.Series:
+    total = len(series)
+    count = 0
+
+    def apply(value):
+        nonlocal count
+        result = function(value)
+        count += 1
+        if count % 10000 == 0 or count == total:
+            print(f"  {name}: {count:,}/{total:,}", flush=True)
+        return result
+
+    return series.map(apply)
+
+
+class LiveProgress(TrainerCallback):
+    """Colab alt süreç çıktısında okunabilir periyodik eğitim durumu."""
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        self.started = time.monotonic()
+        print(f"[5/7] Eğitim başladı: toplam {state.max_steps:,} adım.", flush=True)
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        logs = logs or {}
+        if "loss" in logs and state.global_step:
+            elapsed = time.monotonic() - self.started
+            remaining = elapsed / state.global_step * (state.max_steps - state.global_step)
+            percent = 100 * state.global_step / state.max_steps
+            print(f"  Eğitim: {state.global_step:,}/{state.max_steps:,} adım (%{percent:.1f}) | "
+                  f"tur: {state.epoch:.2f} | kayıp: {logs['loss']:.4f} | "
+                  f"geçen: {elapsed / 60:.1f} dk | tahmini kalan: {remaining / 60:.1f} dk", flush=True)
+        elif "eval_loss" in logs:
+            print(f"  Doğrulama tamamlandı: kayıp={logs['eval_loss']:.4f}, "
+                  f"F1={logs.get('eval_f1', 0):.4f}", flush=True)
+
+
 def prepare_combined(folder: Path, seed: int):
     paths = sorted(folder.glob("*.csv"))
     if len(paths) != 29:
@@ -43,7 +83,7 @@ def prepare_combined(folder: Path, seed: int):
     # Kaynak parçalar satır ortasından bile bölünebiliyor ve her parçaya
     # sütun başlığı eklenmiş. Sadece eklenen başlıkları kaldırıp baytları
     # sırayla birleştirmek, quoted çok satırlı kayıtları kurtarır.
-    print("29 CSV parçası özgün sırayla birleştiriliyor...", flush=True)
+    print("[2/7] 29 CSV parçası özgün sırayla birleştiriliyor...", flush=True)
     with tempfile.TemporaryDirectory(prefix="combined_train_") as temp:
         joined = Path(temp) / "train.csv"
         expected_header = None
@@ -57,7 +97,10 @@ def prepare_combined(folder: Path, seed: int):
                     elif header != expected_header:
                         raise ValueError(f"Parça başlığı uyuşmuyor: {path.name}")
                     shutil.copyfileobj(part, out, length=1024 * 1024)
+                print(f"  Birleştirildi: {index + 1}/{len(paths)} ({path.name})", flush=True)
+        print("  Birleştirilen CSV okunuyor; uzun metinler nedeniyle birkaç dakika sürebilir...", flush=True)
         data = pd.read_csv(joined, encoding="utf-8-sig", low_memory=False)
+    print(f"  Okunan haber: {len(data):,}", flush=True)
     cols = {str(x).strip().casefold(): x for x in data.columns}
     if not {"label", "statement"}.issubset(cols):
         raise ValueError("Birleştirilen veride Label/Statement eksik.")
@@ -66,13 +109,14 @@ def prepare_combined(folder: Path, seed: int):
     data["kaynak_dosya"] = "siralariyla_birlestirilmis_29_parca"
     data["kaynak_satir"] = np.arange(2, len(data) + 2)
     initial = len(data)
-    data["text"] = data.text.fillna("").astype(str).map(norm)
+    data["text"] = map_progress(data.text.fillna("").astype(str), norm, "Metinler hazırlanıyor")
     labels = pd.to_numeric(data.label, errors="coerce")
     bad = (~labels.isin([0, 1])) | data.text.eq("")
     bad_count = int(bad.sum())
     data = data.loc[~bad].copy()
     data["label"] = labels.loc[~bad].astype(int)
-    data["text_key"] = data.text.map(lambda v: hashlib.sha256(v.casefold().encode("utf-8")).hexdigest())
+    data["text_key"] = map_progress(data.text, lambda v: hashlib.sha256(v.casefold().encode("utf-8")).hexdigest(),
+                                    "Tekrar kontrolü")
     conflicting = data.groupby("text_key").label.transform("nunique").gt(1)
     conflict_count = int(conflicting.sum())
     data = data.loc[~conflicting].copy()
@@ -130,6 +174,7 @@ def main():
         raise FileExistsError(f"Sonuç klasörü mevcut, korunuyor: {a.output}")
     set_seed(config.seed)
     data, info = prepare_combined(a.combined_train, config.seed)
+    print("[3/7] ISOT verisinden 10.000 test haberi seçiliyor...", flush=True)
     test = load_isot_test(a.isot_dir, config.seed)
     if set(test.label.unique()) != {0, 1}:
         raise ValueError("ISOT test bölmesinde iki sınıf da olmalı.")
@@ -149,23 +194,27 @@ def main():
         (a.output / "combined_kaynak.json").write_bytes(manifest_path.read_bytes())
     data[["kaynak_dosya", "kaynak_satir", "label", "text_key", "split"]].to_csv(a.output / "combined_egitim_dogrulama_bolmesi.csv", index=False)
     print("Veri özeti:", json.dumps(info, ensure_ascii=False), flush=True)
-    print(f"Model indiriliyor: {config.model_name}", flush=True)
+    print(f"[4/7] Model indiriliyor/yükleniyor: {config.model_name}", flush=True)
     tokenizer = AutoTokenizer.from_pretrained(config.model_name, use_fast=True)
     model = AutoModelForSequenceClassification.from_pretrained(config.model_name, num_labels=2,
                  id2label={0: "Gercek", 1: "Sahte"}, label2id={"Gercek": 0, "Sahte": 1})
-    print("Eğitim metinleri tokenlara dönüştürülüyor...", flush=True)
+    print("  Eğitim metinleri tokenlara dönüştürülüyor...", flush=True)
     train_data = NewsDataset(data[data.split.eq("train")], tokenizer, config.max_length)
+    print("  Doğrulama metinleri tokenlara dönüştürülüyor...", flush=True)
     valid_data = NewsDataset(data[data.split.eq("validation")], tokenizer, config.max_length)
+    print("  ISOT test metinleri tokenlara dönüştürülüyor...", flush=True)
     test_data = NewsDataset(test, tokenizer, config.max_length)
     arguments = build_training_arguments(config, a.checkpoint_root / a.output.name,
                                           len(train_data), torch.cuda.is_available())
+    arguments.disable_tqdm = True
     trainer = Trainer(model=model, args=arguments, train_dataset=train_data, eval_dataset=valid_data,
         data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
         compute_metrics=lambda x: classification_metrics(x.label_ids, x.predictions),
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=config.early_stopping_patience)])
-    print("Eğitim başladı...", flush=True)
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=config.early_stopping_patience), LiveProgress()])
+    trainer.remove_callback(PrinterCallback)
+    print("  Model eğitime hazırlanıyor...", flush=True)
     trainer.train()
-    print("ISOT test bölmesi değerlendiriliyor...", flush=True)
+    print("[6/7] ISOT test haberleri değerlendiriliyor...", flush=True)
     result = trainer.predict(test_data, metric_key_prefix="test")
     probabilities = probabilities_from_logits(result.predictions)
     pred = (probabilities >= 0.5).astype(int)
@@ -177,6 +226,7 @@ def main():
         "karisiklik_matrisi": confusion_matrix(result.label_ids, pred, labels=[0, 1]).tolist()}
     (a.output / "ISOT_Test_Metrikleri.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     (a.output / "Egitim_Gecmisi.json").write_text(json.dumps(trainer.state.log_history, ensure_ascii=False, indent=2, default=float), encoding="utf-8")
+    print("[7/7] Grafikler ve model kaydediliyor...", flush=True)
     plot_training_history(trainer.state.log_history, a.output)
     plot_test_curves_and_matrix(result.label_ids, result.predictions, a.output)
     trainer.save_model(a.output / "en_iyi_model")
